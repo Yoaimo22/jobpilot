@@ -42,6 +42,7 @@ model User {
   applicationErrors ApplicationError[]
   tags              Tag[]
   screeningAnswers  ScreeningAnswer[]
+  discoverySources  DiscoverySource[]
 }
 
 model Account {
@@ -510,10 +511,39 @@ model AutomationRule {
   excludedKeywords      String[] @default([])
   applyMode             ApplyMode @default(MANUAL)
   followUpIntervalDays  Int      @default(7)
+  // ─── Automatic discovery (spec §3 / §15) ───
+  autoDiscoverEnabled   Boolean  @default(true)
+  /// When true, jobs scoring >= minMatchScore automatically get an application
+  /// PREPARED (never submitted) so the user only has to approve it.
+  autoPrepareEnabled    Boolean  @default(true)
+  /// Cap on how many jobs a single discovery run may import.
+  maxJobsPerRun         Int      @default(50)
+  lastDiscoveryAt       DateTime?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// A source the discovery engine polls on the user's behalf. Only sources with
+/// an official / public API are supported — no scraping (spec §3, §31).
+model DiscoverySource {
+  id         String   @id @default(cuid())
+  userId     String
+  kind       String // remotive | arbeitnow | greenhouse | lever
+  /// Board token / company slug. Empty for keyword aggregators.
+  identifier String   @default("")
+  label      String?
+  enabled    Boolean  @default(true)
+  lastRunAt  DateTime?
+  lastCount  Int      @default(0)
+  lastError  String?
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, identifier])
+  @@index([userId])
 }
 
 model AutomationLog {

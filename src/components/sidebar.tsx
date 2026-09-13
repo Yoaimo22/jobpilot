@@ -4,11 +4,12 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, Briefcase, Sparkles, Send, Building2,
-  BarChart3, FileText, User, Settings2, Bell, Cog, Compass, ListChecks,
+  BarChart3, FileText, User, Settings2, Bell, Cog, Compass, ListChecks, Radar,
 } from "lucide-react";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard/discovery", label: "Pencarian Otomatis", icon: Radar },
   { href: "/dashboard/jobs", label: "Jobs", icon: Briefcase },
   { href: "/dashboard/recommended", label: "Recommended Jobs", icon: Sparkles },
   { href: "/dashboard/applications", label: "Applications", icon: Send },

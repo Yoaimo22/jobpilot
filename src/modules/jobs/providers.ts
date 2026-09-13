@@ -114,6 +114,13 @@ export class ManualProvider extends JobProvider {
  */
 export const KNOWN_SOURCES = [
   { key: "manual", name: "Manual / Import", supportsApply: false },
+  // Automated discovery via OFFICIAL public APIs (no scraping, ToS-safe).
+  { key: "remotive", name: "Remotive", supportsApply: false },
+  { key: "arbeitnow", name: "Arbeitnow", supportsApply: false },
+  { key: "greenhouse", name: "Greenhouse", supportsApply: false },
+  { key: "lever", name: "Lever", supportsApply: false },
+  // Declared for reference only — NOT polled. Their ToS forbids automated
+  // access, so no adapter exists and none will be added without an official API.
   { key: "linkedin", name: "LinkedIn", supportsApply: false },
   { key: "indeed", name: "Indeed", supportsApply: false },
   { key: "jobstreet", name: "Jobstreet", supportsApply: false },
