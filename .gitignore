@@ -1,0 +1,28 @@
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+
+# production
+/build
+
+# env & secrets — NEVER commit real secrets
+.env
+.env*.local
+.env.production
+
+# private file storage (uploaded CVs)
+/storage
+
+# testing / logs
+/coverage
+*.log
+npm-debug.log*
+
+# misc
+.DS_Store
+*.pem
+.vscode/

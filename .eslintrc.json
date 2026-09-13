@@ -1,0 +1,4 @@
+{
+  "extends": "next/core-web-vitals",
+  "ignorePatterns": ["prisma/seed.ts", "tests/**", "src/generated/**"]
+}

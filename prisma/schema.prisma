@@ -1,0 +1,604 @@
+// JobPilot — Prisma schema
+// Job Application Management & Automation System
+// Datasource: PostgreSQL. All user-owned tables carry userId for authorization scoping.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// AUTH / USER
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String?
+  name          String?
+  image         String?
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts          Account[]
+  sessions          Session[]
+  profile           Profile?
+  jobPreference     JobPreference?
+  automationRule    AutomationRule?
+  userSkills        UserSkill[]
+  resumes           Resume[]
+  jobs              Job[]
+  companies         Company[]
+  applications      Application[]
+  notifications     Notification[]
+  followUps         FollowUpReminder[]
+  automationLogs    AutomationLog[]
+  applicationErrors ApplicationError[]
+  tags              Tag[]
+  screeningAnswers  ScreeningAnswer[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─────────────────────────────────────────────────────────────
+// PROFILE
+// ─────────────────────────────────────────────────────────────
+
+model Profile {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  fullName          String?
+  email             String?
+  phone             String?
+  location          String?
+  linkedinUrl       String?
+  portfolioUrl      String?
+  githubUrl         String?
+  professionalSummary String? @db.Text
+  languages         String[] @default([])
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  experiences  Experience[]
+  educations   Education[]
+  certifications Certification[]
+}
+
+model Experience {
+  id          String    @id @default(cuid())
+  profileId   String
+  title       String
+  company     String
+  location    String?
+  startDate   DateTime?
+  endDate     DateTime?
+  current     Boolean   @default(false)
+  description String?   @db.Text
+  createdAt   DateTime  @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+}
+
+model Education {
+  id          String    @id @default(cuid())
+  profileId   String
+  institution String
+  degree      String?
+  field       String?
+  startDate   DateTime?
+  endDate     DateTime?
+  description String?   @db.Text
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+}
+
+model Certification {
+  id           String    @id @default(cuid())
+  profileId    String
+  name         String
+  issuer       String?
+  issueDate    DateTime?
+  expiryDate   DateTime?
+  credentialId String?
+  url          String?
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// SKILLS
+// ─────────────────────────────────────────────────────────────
+
+model Skill {
+  id         String      @id @default(cuid())
+  name       String      @unique
+  category   String? // language | framework | tool | soft | other
+  userSkills UserSkill[]
+  jobSkills  JobSkill[]
+}
+
+enum SkillLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+model UserSkill {
+  id      String     @id @default(cuid())
+  userId  String
+  skillId String
+  level   SkillLevel @default(INTERMEDIATE)
+  years   Float?
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, skillId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// RESUME / CV
+// ─────────────────────────────────────────────────────────────
+
+model Resume {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String // e.g. "Backend Engineer CV"
+  fileName    String
+  filePath    String // private storage path
+  fileSize    Int
+  mimeType    String
+  isDefault   Boolean  @default(false)
+  // extracted metadata (correctable by user)
+  extractedSkills       String[] @default([])
+  extractedExperience   String?  @db.Text
+  extractedEducation    String?  @db.Text
+  extractedCertifications String[] @default([])
+  extractedLanguages    String[] @default([])
+  extractedFrameworks   String[] @default([])
+  extractedTools        String[] @default([])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  applications Application[]
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// JOB PREFERENCES
+// ─────────────────────────────────────────────────────────────
+
+model JobPreference {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  expectedSalaryMin  Int?
+  expectedSalaryMax  Int?
+  currency           String   @default("IDR")
+  employmentTypes    String[] @default([]) // FULL_TIME, PART_TIME, CONTRACT, INTERNSHIP, FREELANCE
+  workplaceTypes     String[] @default([]) // REMOTE, HYBRID, ONSITE
+  targetLocations    String[] @default([])
+  targetIndustries   String[] @default([])
+  targetJobTitles    String[] @default([])
+  seniority          String[] @default([]) // INTERN, JUNIOR, MID, SENIOR, LEAD
+  avoidedCompanies   String[] @default([])
+  avoidedKeywords    String[] @default([])
+  requiredSkills     String[] @default([])
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────────────────────
+// COMPANIES
+// ─────────────────────────────────────────────────────────────
+
+model Company {
+  id           String   @id @default(cuid())
+  userId       String
+  name         String
+  logoUrl      String?
+  website      String?
+  linkedinUrl  String?
+  industry     String?
+  size         String?
+  headquarters String?
+  description  String?  @db.Text
+  careersUrl   String?
+  notes        String?  @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobs         Job[]
+  applications Application[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// JOB SOURCES / PROVIDERS
+// ─────────────────────────────────────────────────────────────
+
+model JobSource {
+  id        String   @id @default(cuid())
+  key       String   @unique // linkedin, indeed, jobstreet, glints, kalibrr, company, manual
+  name      String
+  enabled   Boolean  @default(true)
+  supportsApply Boolean @default(false)
+  createdAt DateTime @default(now())
+
+  jobs Job[]
+}
+
+// ─────────────────────────────────────────────────────────────
+// JOBS
+// ─────────────────────────────────────────────────────────────
+
+enum WorkplaceType {
+  REMOTE
+  HYBRID
+  ONSITE
+  UNKNOWN
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERNSHIP
+  FREELANCE
+  UNKNOWN
+}
+
+model Job {
+  id                 String          @id @default(cuid())
+  userId             String
+  companyId          String?
+  sourceId           String?
+  externalId         String? // Job ID from the source platform
+  title              String
+  location           String?
+  workplaceType      WorkplaceType   @default(UNKNOWN)
+  employmentType     EmploymentType  @default(UNKNOWN)
+  salaryMin          Int?
+  salaryMax          Int?
+  currency           String          @default("IDR")
+  description        String?         @db.Text
+  requirements       String?         @db.Text
+  preferredSkills    String[]        @default([])
+  experienceYears    Int?
+  educationRequirement String?
+  originalUrl        String?
+  datePosted         DateTime?
+  dateDiscovered     DateTime        @default(now())
+  applicationDeadline DateTime?
+  easyApply          Boolean         @default(false)
+  recruiterName      String?
+  recruiterContact   String?
+  seniority          String?
+  industry           String?
+  matchScore         Int? // cached last-computed match score 0-100
+  matchReasons       Json? // stored breakdown
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company      Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  source       JobSource?    @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  jobSkills    JobSkill[]
+  applications Application[]
+
+  @@unique([userId, sourceId, externalId])
+  @@index([userId])
+  @@index([userId, matchScore])
+  @@index([companyId])
+}
+
+model JobSkill {
+  id       String  @id @default(cuid())
+  jobId    String
+  skillId  String
+  required Boolean @default(true)
+
+  job   Job   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, skillId])
+  @@index([jobId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// APPLICATIONS
+// ─────────────────────────────────────────────────────────────
+
+enum ApplicationStatus {
+  DISCOVERED
+  INTERESTED
+  PREPARING
+  READY_TO_APPLY
+  AWAITING_REVIEW
+  REQUIRES_USER_INPUT
+  APPLIED
+  VIEWED
+  RECRUITER_CONTACTED
+  INTERVIEW
+  TECHNICAL_TEST
+  OFFERING
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+  FAILED
+}
+
+enum ApplyMode {
+  MANUAL
+  ASSISTED
+  AUTO
+}
+
+model Application {
+  id            String            @id @default(cuid())
+  userId        String
+  jobId         String
+  companyId     String?
+  resumeId      String?
+  status        ApplicationStatus @default(DISCOVERED)
+  applyMode     ApplyMode         @default(MANUAL)
+  matchScore    Int?
+  matchedSkills String[]          @default([])
+  missingSkills String[]          @default([])
+  coverLetter   String?           @db.Text
+  appliedAt     DateTime?
+  recruiterContact String?
+  interviewAt   DateTime?
+  followUpDate  DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job       Job                @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  company   Company?           @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  resume    Resume?            @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+  events    ApplicationEvent[]
+  notes     ApplicationNote[]
+  documents ApplicationDocument[]
+  appTags   ApplicationTag[]
+  errors    ApplicationError[]
+  followUps FollowUpReminder[]
+
+  @@unique([userId, jobId])
+  @@index([userId])
+  @@index([userId, status])
+  @@index([companyId])
+}
+
+model ApplicationEvent {
+  id            String   @id @default(cuid())
+  applicationId String
+  action        String
+  oldValue      String?
+  newValue      String?
+  actor         String   @default("system") // system | user
+  metadata      Json?
+  createdAt     DateTime @default(now())
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+}
+
+model ApplicationDocument {
+  id            String   @id @default(cuid())
+  applicationId String
+  type          String // cv | cover_letter | other
+  name          String
+  filePath      String?
+  content       String?  @db.Text
+  createdAt     DateTime @default(now())
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+}
+
+model ApplicationNote {
+  id            String   @id @default(cuid())
+  applicationId String
+  content       String   @db.Text
+  createdAt     DateTime @default(now())
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+}
+
+model Tag {
+  id     String @id @default(cuid())
+  userId String
+  name   String
+  color  String @default("#6366f1")
+
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appTags ApplicationTag[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model ApplicationTag {
+  id            String @id @default(cuid())
+  applicationId String
+  tagId         String
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  tag         Tag         @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, tagId])
+  @@index([applicationId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// AUTOMATION
+// ─────────────────────────────────────────────────────────────
+
+model AutomationRule {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  minMatchScore         Int      @default(85)
+  maxApplicationsPerDay Int      @default(10)
+  maxApplicationsPerWeek Int     @default(50)
+  maxApplicationsPerCompany Int  @default(2)
+  companyWindowDays     Int      @default(30)
+  minSalary             Int?
+  locations             String[] @default([])
+  remoteOnly            Boolean  @default(false)
+  preferredJobTitles    String[] @default([])
+  excludedJobTitles     String[] @default([])
+  excludedCompanies     String[] @default([])
+  excludedKeywords      String[] @default([])
+  applyMode             ApplyMode @default(MANUAL)
+  followUpIntervalDays  Int      @default(7)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AutomationLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String
+  level     String   @default("info") // info | warn | error
+  message   String   @db.Text
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// NOTIFICATIONS / REMINDERS / ERRORS
+// ─────────────────────────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String // application_submitted | duplicate | daily_limit | new_match | interview | follow_up | cv_missing | job_expired | error
+  title     String
+  message   String   @db.Text
+  read      Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, read])
+}
+
+model FollowUpReminder {
+  id            String   @id @default(cuid())
+  userId        String
+  applicationId String
+  dueDate       DateTime
+  done          Boolean  @default(false)
+  note          String?
+  createdAt     DateTime @default(now())
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  application Application  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, done])
+}
+
+model ApplicationError {
+  id            String   @id @default(cuid())
+  userId        String
+  applicationId String?
+  jobTitle      String?
+  companyName   String?
+  platform      String?
+  errorType     String
+  errorMessage  String   @db.Text
+  retryCount    Int      @default(0)
+  resolved      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  application Application?  @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// SCREENING ANSWERS (reusable defaults)
+// ─────────────────────────────────────────────────────────────
+
+model ScreeningAnswer {
+  id        String   @id @default(cuid())
+  userId    String
+  question  String
+  answer    String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, question])
+  @@index([userId])
+}
