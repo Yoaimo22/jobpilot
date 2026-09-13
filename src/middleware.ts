@@ -1,5 +1,11 @@
-import { auth } from "@/lib/auth";
+import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
+import { authConfig } from "@/lib/auth.config";
+
+// Build NextAuth from the EDGE-SAFE config only. Importing `@/lib/auth` here
+// would pull Prisma into the Edge runtime and crash every matched route in
+// production with a server-side exception.
+const { auth } = NextAuth(authConfig);
 
 export default auth((req) => {
   const isAuthed = !!req.auth?.user;

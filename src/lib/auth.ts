@@ -2,8 +2,15 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
-import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { prisma } from "@/lib/prisma";
+import { authConfig } from "@/lib/auth.config";
+
+/**
+ * Full auth configuration — Node runtime only (API routes, server components).
+ * Middleware must NOT import this file: it pulls in Prisma, which cannot run on
+ * the Edge runtime. Middleware uses `auth.config.ts` instead.
+ */
 
 const credentialsSchema = z.object({
   email: z.string().email(),
@@ -11,10 +18,8 @@ const credentialsSchema = z.object({
 });
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  ...authConfig,
   adapter: PrismaAdapter(prisma),
-  session: { strategy: "jwt" },
-  pages: { signIn: "/login" },
-  trustHost: true,
   providers: [
     Credentials({
       credentials: {
@@ -36,16 +41,4 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     }),
   ],
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) token.id = user.id;
-      return token;
-    },
-    async session({ session, token }) {
-      if (session.user && token.id) {
-        session.user.id = token.id as string;
-      }
-      return session;
-    },
-  },
 });
