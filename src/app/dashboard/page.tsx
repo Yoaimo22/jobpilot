@@ -13,6 +13,9 @@ import {
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
+// Give the page room on a cold start / distant database instead of being
+// killed at the default 10s budget.
+export const maxDuration = 30;
 
 export default async function DashboardPage() {
   const session = await auth();

@@ -19,45 +19,45 @@ const APPLIED_STATUSES = [
 
 export async function getDashboardStats(userId: string) {
   const now = new Date();
-  const [
-    jobsDiscovered,
-    jobsMatched,
-    totalApplications,
-    appliedToday,
-    appliedWeek,
-    appliedMonth,
-    interviews,
-    techTests,
-    offers,
-    rejections,
-    pending,
-    rule,
-  ] = await Promise.all([
-    prisma.job.count({ where: { userId } }),
-    prisma.job.count({ where: { userId, matchScore: { gte: 70 } } }),
-    prisma.application.count({ where: { userId } }),
-    prisma.application.count({ where: { userId, appliedAt: { gte: startOfDay(now) } } }),
-    prisma.application.count({
-      where: { userId, appliedAt: { gte: startOfWeek(now, { weekStartsOn: 1 }) } },
-    }),
-    prisma.application.count({ where: { userId, appliedAt: { gte: startOfMonth(now) } } }),
-    prisma.application.count({ where: { userId, status: "INTERVIEW" } }),
-    prisma.application.count({ where: { userId, status: "TECHNICAL_TEST" } }),
-    prisma.application.count({ where: { userId, status: { in: ["OFFERING", "ACCEPTED"] } } }),
-    prisma.application.count({ where: { userId, status: "REJECTED" } }),
-    prisma.application.count({
-      where: {
-        userId,
-        status: { in: ["PREPARING", "READY_TO_APPLY", "AWAITING_REVIEW", "REQUIRES_USER_INPUT"] },
-      },
-    }),
-    prisma.automationRule.findUnique({ where: { userId } }),
-  ]);
+  const dayStart = startOfDay(now);
+  const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+  const monthStart = startOfMonth(now);
 
-  const highMatch = await prisma.job.count({ where: { userId, matchScore: { gte: 90 } } });
-  const followUpsDue = await prisma.followUpReminder.count({
-    where: { userId, done: false, dueDate: { lte: now } },
-  });
+  // Reduced from 14 separate round-trips to 6. Each query crosses the network,
+  // so on a serverless host far from the database the count matters a lot.
+  const [jobsDiscovered, jobsMatched, highMatch, statusGroups, appliedDates, rule, followUpsDue] =
+    await Promise.all([
+      prisma.job.count({ where: { userId } }),
+      prisma.job.count({ where: { userId, matchScore: { gte: 70 } } }),
+      prisma.job.count({ where: { userId, matchScore: { gte: 90 } } }),
+      // One query replaces six per-status counts.
+      prisma.application.groupBy({
+        by: ["status"],
+        where: { userId },
+        _count: { _all: true },
+      }),
+      // One query replaces the three date-window counts.
+      prisma.application.findMany({
+        where: { userId, appliedAt: { not: null } },
+        select: { appliedAt: true },
+      }),
+      prisma.automationRule.findUnique({ where: { userId } }),
+      prisma.followUpReminder.count({
+        where: { userId, done: false, dueDate: { lte: now } },
+      }),
+    ]);
+
+  const byStatus = new Map<string, number>(
+    statusGroups.map((g) => [g.status as string, g._count._all])
+  );
+  const countOf = (...statuses: string[]) =>
+    statuses.reduce((sum, s) => sum + (byStatus.get(s) ?? 0), 0);
+
+  const totalApplications = statusGroups.reduce((sum, g) => sum + g._count._all, 0);
+
+  const appliedToday = appliedDates.filter((a) => a.appliedAt! >= dayStart).length;
+  const appliedWeek = appliedDates.filter((a) => a.appliedAt! >= weekStart).length;
+  const appliedMonth = appliedDates.filter((a) => a.appliedAt! >= monthStart).length;
 
   return {
     jobsDiscovered,
@@ -67,11 +67,11 @@ export async function getDashboardStats(userId: string) {
     appliedToday,
     appliedWeek,
     appliedMonth,
-    interviews,
-    techTests,
-    offers,
-    rejections,
-    pending,
+    interviews: countOf("INTERVIEW"),
+    techTests: countOf("TECHNICAL_TEST"),
+    offers: countOf("OFFERING", "ACCEPTED"),
+    rejections: countOf("REJECTED"),
+    pending: countOf("PREPARING", "READY_TO_APPLY", "AWAITING_REVIEW", "REQUIRES_USER_INPUT"),
     followUpsDue,
     dailyLimit: rule?.maxApplicationsPerDay ?? 10,
   };
