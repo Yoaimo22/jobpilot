@@ -43,6 +43,8 @@ model User {
   tags              Tag[]
   screeningAnswers  ScreeningAnswer[]
   discoverySources  DiscoverySource[]
+  cvVersions        CvVersion[]
+  verifiedSkills    UserVerifiedSkill[]
 }
 
 model Account {
@@ -206,12 +208,194 @@ model Resume {
   extractedLanguages    String[] @default([])
   extractedFrameworks   String[] @default([])
   extractedTools        String[] @default([])
+  /// Full structured parse (spec §1), user-correctable. Shape = ParsedCv.
+  parsedData            Json?
+  /// Raw extracted text — the evidence corpus every claim is checked against.
+  rawText               String?  @db.Text
+  parsedAt              DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   applications Application[]
+  evidence     CvEvidence[]
+  analyses     CvAnalysis[]
+  jobMatches   CvJobMatch[]
+  recommendations CvRecommendation[]
+  versions     CvVersion[]   @relation("ResumeVersions")
 
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// AI CV MATCHER & OPTIMIZER (spec §29)
+// Resume acts as cv_documents; the tables below hold the analysis layer.
+// ─────────────────────────────────────────────────────────────
+
+/// How a competency relates to what the CV actually proves.
+enum EvidenceKind {
+  DIRECT_SKILL /// literally written in the CV
+  RELATED_COMPETENCY /// implied by a direct skill via a curated relationship
+  INFERRED_COMPETENCY /// inferred from phrasing, weaker confidence
+  MISSING_SKILL /// required by a job, no evidence at all
+}
+
+/// Every competency the system claims the user has, with the exact sentence
+/// from the CV that proves it. No evidence row => the system may never present
+/// that skill as owned (spec §2, §31).
+model CvEvidence {
+  id         String       @id @default(cuid())
+  resumeId   String
+  skill      String
+  kind       EvidenceKind
+  /// Verbatim sentence(s) from the CV supporting this competency.
+  quote      String       @db.Text
+  section    String? // summary | experience | skills | projects | education
+  confidence Float        @default(0)
+  createdAt  DateTime     @default(now())
+
+  resume Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@index([resumeId])
+  @@index([resumeId, skill])
+}
+
+/// Per-section quality scoring of a CV (spec §13, §33).
+model CvAnalysis {
+  id           String   @id @default(cuid())
+  resumeId     String
+  section      String // summary | experience | skills | projects | education | overall
+  score        Int // 0-100
+  problems     String[] @default([])
+  suggestions  String[] @default([])
+  /// Recruiter readability sub-score where applicable (spec §33).
+  readability  Int?
+  createdAt    DateTime @default(now())
+
+  resume Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@unique([resumeId, section])
+  @@index([resumeId])
+}
+
+/// Cached CV-vs-job score with the full component breakdown (spec §5, §32).
+model CvJobMatch {
+  id                String   @id @default(cuid())
+  resumeId          String
+  jobId             String
+  /// Overall = weighted blend of qualification + presentation.
+  overall           Int
+  /// What the user can actually DO — unaffected by wording changes.
+  qualificationScore Int
+  /// How well the CV presents it — this is what optimization improves.
+  presentationScore  Int
+  breakdown         Json /// per-component percentages
+  matchedExact      String[] @default([])
+  matchedRelated    String[] @default([])
+  matchedPartial    String[] @default([])
+  missing           String[] @default([])
+  atsScore          Int?
+  atsDetected       String[] @default([])
+  atsMissing        String[] @default([])
+  computedAt        DateTime @default(now())
+
+  resume Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  job    Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([resumeId, jobId])
+  @@index([resumeId])
+  @@index([jobId])
+}
+
+enum RecommendationType {
+  SAFE_REWRITE
+  RELATED_SKILL
+  REQUIRES_CONFIRMATION
+  NOT_ALLOWED
+}
+
+enum RecommendationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  MODIFIED
+}
+
+/// A proposed CV change. Never applied until the user accepts it (spec §29, §28).
+model CvRecommendation {
+  id               String               @id @default(cuid())
+  resumeId         String
+  jobId            String?
+  section          String
+  originalText     String               @db.Text
+  recommendedText  String               @db.Text
+  /// Alternative phrasings the user can pick from (spec §9).
+  options          Json?
+  recommendationType RecommendationType
+  reason           String               @db.Text
+  /// Verbatim CV quotes justifying this change.
+  evidence         String[]             @default([])
+  relatedSkills    String[]             @default([])
+  unsupportedSkills String[]            @default([])
+  confidence       Float                @default(0)
+  estimatedImpact  Int                  @default(0)
+  status           RecommendationStatus @default(PENDING)
+  /// Filled when the user edits the suggestion themselves.
+  userText         String?              @db.Text
+  createdAt        DateTime             @default(now())
+
+  resume Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  job    Job?   @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@index([resumeId])
+  @@index([resumeId, status])
+}
+
+/// An approved, generated CV. The original file is never overwritten (spec §19).
+model CvVersion {
+  id             String   @id @default(cuid())
+  userId         String
+  parentResumeId String
+  label          String
+  targetJobId    String?
+  targetCompany  String?
+  /// The structured CV content this version renders from.
+  content        Json
+  template       String   @default("ats-simple")
+  filePath       String?
+  matchBefore    Int?
+  matchAfter     Int?
+  changeCount    Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent Resume @relation("ResumeVersions", fields: [parentResumeId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([parentResumeId])
+}
+
+enum SkillConfirmation {
+  YES
+  NO
+  NOT_SURE
+}
+
+/// The user's own answer about a skill the CV only hints at (spec §11).
+/// A NO is binding: the system must never suggest that skill as owned again.
+model UserVerifiedSkill {
+  id           String            @id @default(cuid())
+  userId       String
+  skill        String
+  confirmation SkillConfirmation
+  note         String?
+  askedBecause String?           @db.Text
+  updatedAt    DateTime          @updatedAt
+  createdAt    DateTime          @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, skill])
   @@index([userId])
 }
 
@@ -340,6 +524,8 @@ model Job {
   source       JobSource?    @relation(fields: [sourceId], references: [id], onDelete: SetNull)
   jobSkills    JobSkill[]
   applications Application[]
+  cvMatches    CvJobMatch[]
+  cvRecommendations CvRecommendation[]
 
   @@unique([userId, sourceId, externalId])
   @@index([userId])

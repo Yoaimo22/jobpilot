@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import Link from "next/link";
 import useFetch from "@/lib/use-fetch";
 import { api } from "@/lib/client";
 import { PageHeader, EmptyState, ListSkeleton, ErrorState } from "@/components/shared";
@@ -10,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { TagInput } from "@/components/tag-input";
 import { useToast } from "@/components/ui/toast";
-import { FileText, Loader2, Star, Trash2, Eye, Upload } from "lucide-react";
+import { FileText, Loader2, Star, Trash2, Eye, Upload, Sparkles } from "lucide-react";
 
 interface Resume {
   id: string; name: string; fileName: string; fileSize: number; isDefault: boolean;
@@ -47,7 +48,15 @@ export default function CvPage() {
 
   return (
     <div>
-      <PageHeader title="CV Manager" description="Upload multiple CVs. We extract skills for matching — you can correct them." />
+      <PageHeader
+        title="CV Manager"
+        description="Upload multiple CVs. We extract skills for matching — you can correct them."
+        action={
+          <Link href="/dashboard/cv/analysis">
+            <Button><Sparkles className="h-4 w-4" /> AI CV Analysis</Button>
+          </Link>
+        }
+      />
       <Card className="mb-4">
         <CardHeader><CardTitle className="text-base">Upload a CV (PDF)</CardTitle></CardHeader>
         <CardContent className="grid sm:grid-cols-3 gap-3 items-end">
