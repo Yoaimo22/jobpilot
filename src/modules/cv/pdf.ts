@@ -7,16 +7,11 @@
  *  - standard section headings an ATS recognises
  *  - conservative fonts (Helvetica / Times) and plain bullets
  */
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, type PDFFont } from "pdf-lib";
+import { TEMPLATES, type TemplateId } from "./templates";
 
-export type TemplateId = "ats-simple" | "modern-professional" | "compact-technical" | "executive-clean";
-
-export const TEMPLATES: { id: TemplateId; name: string; description: string }[] = [
-  { id: "ats-simple", name: "ATS Simple", description: "Plainest layout, maximum parser compatibility. Default." },
-  { id: "modern-professional", name: "Modern Professional", description: "Subtle rules under headings, still single-column." },
-  { id: "compact-technical", name: "Compact Technical", description: "Tighter spacing to fit more within two pages." },
-  { id: "executive-clean", name: "Executive Clean", description: "Larger headings and generous whitespace." },
-];
+export { TEMPLATES };
+export type { TemplateId };
 
 export interface CvContent {
   name: string;

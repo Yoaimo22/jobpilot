@@ -10,9 +10,12 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/feedback";
 import { useToast } from "@/components/ui/toast";
+import { BeforeAfter } from "@/components/cv/before-after";
+import { SkillConfirmation } from "@/components/cv/skill-confirmation";
+import { TEMPLATES } from "@/modules/cv/templates";
 import {
   Loader2, ShieldCheck, ShieldAlert, Quote, Check, X, Pencil,
-  RotateCcw, FileDown, Wand2, Info,
+  RotateCcw, FileDown, Wand2, Info, Eye, LayoutTemplate,
 } from "lucide-react";
 
 interface MatchResult {
@@ -64,6 +67,8 @@ export default function OptimizePage() {
   const [building, setBuilding] = React.useState(false);
   const [editing, setEditing] = React.useState<string | null>(null);
   const [editText, setEditText] = React.useState("");
+  const [template, setTemplate] = React.useState("ats-simple");
+  const [previewing, setPreviewing] = React.useState(false);
   const [built, setBuilt] = React.useState<{ versionId: string; matchBefore: number | null; matchAfter: number | null; changesApplied: number } | null>(null);
 
   const loadAll = React.useCallback(async () => {
@@ -109,12 +114,34 @@ export default function OptimizePage() {
     setBuilding(true);
     try {
       const res = await api<{ versionId: string; matchBefore: number | null; matchAfter: number | null; changesApplied: number }>(
-        "/api/cv/generate", { method: "POST", body: JSON.stringify({ resumeId, jobId, template: "ats-simple" }) }
+        "/api/cv/generate", { method: "POST", body: JSON.stringify({ resumeId, jobId, template }) }
       );
       setBuilt(res);
       toast({ title: `CV versi baru dibuat (${res.changesApplied} perubahan)`, variant: "success" });
     } catch (e) { toast({ title: "Gagal membuat PDF", description: (e as Error).message, variant: "error" }); }
     finally { setBuilding(false); }
+  }
+
+  /** Stream a preview PDF in a new tab without saving a version (spec §20). */
+  async function previewPdf() {
+    setPreviewing(true);
+    try {
+      const res = await fetch("/api/cv/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resumeId, jobId, template, previewOnly: true }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({ error: "Preview gagal" }));
+        throw new Error(j.error ?? "Preview gagal");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      toast({ title: "Gagal membuat pratinjau", description: (e as Error).message, variant: "error" });
+    } finally { setPreviewing(false); }
   }
 
   const accepted = recs.filter((r) => r.status === "ACCEPTED" || r.status === "MODIFIED").length;
@@ -231,6 +258,48 @@ export default function OptimizePage() {
         </>
       )}
 
+      <div className="grid lg:grid-cols-2 gap-4 mb-4">
+        <SkillConfirmation resumeId={resumeId} onAnswered={loadAll} />
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <LayoutTemplate className="h-4 w-4" /> Template PDF
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">Semua template tetap ATS-friendly.</p>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {TEMPLATES.map((t) => (
+              <label
+                key={t.id}
+                className={`flex items-start gap-2 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${
+                  template === t.id ? "border-primary bg-primary/5" : "hover:bg-accent"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="template"
+                  className="mt-1"
+                  checked={template === t.id}
+                  onChange={() => setTemplate(t.id)}
+                />
+                <span className="min-w-0">
+                  <span className="text-sm font-medium block">{t.name}</span>
+                  <span className="text-xs text-muted-foreground">{t.description}</span>
+                </span>
+              </label>
+            ))}
+            <Button
+              size="sm" variant="outline" className="w-full"
+              onClick={previewPdf} disabled={previewing}
+            >
+              {previewing ? <Loader2 className="animate-spin" /> : <Eye className="h-4 w-4" />}
+              Pratinjau PDF
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
       <Card className="mb-4">
         <CardHeader className="flex-row items-center justify-between flex-wrap gap-2">
           <CardTitle className="text-base">Mode rekomendasi</CardTitle>
@@ -272,6 +341,12 @@ export default function OptimizePage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {recs.length > 0 && (
+        <div className="mb-4">
+          <BeforeAfter resumeId={resumeId} jobId={jobId} onChanged={loadAll} />
+        </div>
       )}
 
       <Card>

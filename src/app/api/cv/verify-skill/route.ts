@@ -42,6 +42,23 @@ export async function POST(req: Request) {
       }
     }
 
+    // A YES releases suggestions that were held back purely for confirmation.
+    if (confirmation === "YES") {
+      const held = await prisma.cvRecommendation.findMany({
+        where: { resume: { userId }, recommendationType: "REQUIRES_CONFIRMATION", status: "PENDING" },
+        select: { id: true, relatedSkills: true },
+      });
+      const releasable = held
+        .filter((p) => p.relatedSkills.some((s) => s.toLowerCase() === skill.toLowerCase()))
+        .map((p) => p.id);
+      if (releasable.length) {
+        await prisma.cvRecommendation.updateMany({
+          where: { id: { in: releasable } },
+          data: { recommendationType: "RELATED_SKILL" },
+        });
+      }
+    }
+
     return ok(row);
   } catch (err) {
     return toErrorResponse(err);
