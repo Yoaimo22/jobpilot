@@ -245,6 +245,28 @@ describe("Recommendation options", () => {
     expect(summaries.length).toBeGreaterThan(0);
     expect(summaries.every((s) => !/\d+\s*year/i.test(s))).toBe(true);
   });
+
+  it("never borrows an unearned seniority from the target job title", () => {
+    // The CV says "Backend Engineer"; the vacancy says "Senior Backend Engineer".
+    const summaries = buildSummaryOptions(parsed, ["Node.js", "PostgreSQL"], "Senior Backend Engineer");
+    expect(summaries.length).toBeGreaterThan(0);
+    for (const s of summaries) {
+      expect(s).not.toMatch(/\bSenior\b/i);
+    }
+    // It should use the user's own title instead.
+    expect(summaries.some((s) => /Backend Engineer/i.test(s))).toBe(true);
+  });
+
+  it("adopts the target title when the CV fully supports it", () => {
+    const summaries = buildSummaryOptions(parsed, ["Node.js"], "Backend Engineer");
+    expect(summaries.some((s) => /Backend Engineer/i.test(s))).toBe(true);
+  });
+
+  it("states a year count only when derivable from CV dates", () => {
+    const summaries = buildSummaryOptions(parsed, ["Node.js"], null);
+    // CV_TEXT has Jan 2020 - Dec 2021 and Jan 2022 - Present, so years exist.
+    expect(summaries.some((s) => /\d+\s*years?\s*of experience/i.test(s))).toBe(true);
+  });
 });
 
 describe("CV ↔ job matching", () => {

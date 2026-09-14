@@ -134,11 +134,22 @@ export function toSentences(text: string): string[] {
 
 /** Slice the text into labelled sections using common CV headings. */
 export function splitSections(text: string): Record<string, string> {
+  const byLine = splitSectionsByLine(text);
+  // Some PDF extractors return everything on one line. When per-line detection
+  // finds nothing (or almost nothing), fall back to locating headings inside the
+  // blob so the parser still works instead of silently returning no sections.
+  if (Object.keys(byLine).length >= 2) return byLine;
+
+  const inline = splitSectionsInline(text);
+  return Object.keys(inline).length > Object.keys(byLine).length ? inline : byLine;
+}
+
+function splitSectionsByLine(text: string): Record<string, string> {
   const lines = text.split(/\r?\n/);
   const found: { idx: number; key: string }[] = [];
 
   lines.forEach((line, i) => {
-    const clean = line.replace(/[^a-zA-Z\s]/g, " ").trim().toLowerCase();
+    const clean = line.replace(/[^a-zA-Z\s]/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
     if (!clean || clean.length > 40) return;
     for (const [key, headings] of Object.entries(SECTION_HEADINGS)) {
       if (headings.some((h) => clean === h || clean.startsWith(h))) {
@@ -151,7 +162,48 @@ export function splitSections(text: string): Record<string, string> {
   const out: Record<string, string> = {};
   found.forEach((f, n) => {
     const end = n + 1 < found.length ? found[n + 1].idx : lines.length;
-    out[f.key] = (out[f.key] ?? "") + lines.slice(f.idx + 1, end).join("\n");
+    out[f.key] = ((out[f.key] ?? "") + "\n" + lines.slice(f.idx + 1, end).join("\n")).trim();
+  });
+  return out;
+}
+
+/**
+ * Locate headings anywhere in the text (not just at line starts) and cut the
+ * blob between them. Bullet markers are promoted to newlines so downstream
+ * bullet parsing still works.
+ */
+function splitSectionsInline(text: string): Record<string, string> {
+  const hits: { at: number; len: number; key: string }[] = [];
+
+  for (const [key, headings] of Object.entries(SECTION_HEADINGS)) {
+    for (const h of headings) {
+      const re = new RegExp(`(?:^|[\\s•·|])(${esc(h)})(?=[\\s:•·|]|$)`, "gi");
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(text)) !== null) {
+        hits.push({ at: m.index + m[0].indexOf(m[1]), len: m[1].length, key });
+      }
+    }
+  }
+  if (!hits.length) return {};
+
+  hits.sort((a, b) => a.at - b.at || b.len - a.len);
+  // Drop overlapping matches, keeping the longest heading at each position.
+  const picked: typeof hits = [];
+  for (const h of hits) {
+    if (picked.some((p) => h.at < p.at + p.len)) continue;
+    picked.push(h);
+  }
+
+  const out: Record<string, string> = {};
+  picked.forEach((h, i) => {
+    const start = h.at + h.len;
+    const end = i + 1 < picked.length ? picked[i + 1].at : text.length;
+    const body = text
+      .slice(start, end)
+      // Turn bullets into line breaks so bullet detection works.
+      .replace(/\s*[•·●]\s*/g, "\n- ")
+      .trim();
+    if (body) out[h.key] = ((out[h.key] ?? "") + "\n" + body).trim();
   });
   return out;
 }

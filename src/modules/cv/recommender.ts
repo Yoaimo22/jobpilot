@@ -249,7 +249,20 @@ export function buildSummaryOptions(
   const skills = topSkills.slice(0, 5);
   if (!skills.length) return [];
 
-  const role = targetTitle || cv.experiences[0]?.position || "Software Engineer";
+  const ownTitle = cv.experiences[0]?.position?.trim();
+  // Adopt the target title ONLY when the CV itself already supports every word
+  // of it. Otherwise borrowing the vacancy's title would silently claim a
+  // seniority ("Senior", "Lead", "Principal") the CV does not establish (§37).
+  const haystack = `${cv.sentences.join(" ")} ${ownTitle ?? ""}`;
+  const targetIsSupported =
+    !!targetTitle &&
+    targetTitle
+      .toLowerCase()
+      .split(/[^a-z0-9.+#]+/)
+      .filter((t) => t.length > 2)
+      .every((t) => mentions(haystack, t));
+
+  const role = (targetIsSupported ? targetTitle : ownTitle) || "Software Engineer";
   const skillPhrase = skills.length > 1
     ? `${skills.slice(0, -1).join(", ")}, and ${skills[skills.length - 1]}`
     : skills[0];

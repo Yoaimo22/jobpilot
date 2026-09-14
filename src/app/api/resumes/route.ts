@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { ok, fail, requireUserId, toErrorResponse } from "@/lib/api";
 import { saveFile } from "@/lib/storage";
+import { tryExtractPdfText } from "@/lib/pdf-text";
 import { extractFromText } from "@/modules/resumes/extract";
 import { notify } from "@/modules/notifications/service";
 
@@ -38,9 +39,8 @@ export async function POST(req: Request) {
       tools: [] as string[], experience: "", education: "", certifications: [] as string[],
     };
     try {
-      const pdfParse = (await import("pdf-parse")).default;
-      const parsed = await pdfParse(buffer);
-      extracted = extractFromText(parsed.text);
+      const text = await tryExtractPdfText(buffer);
+      if (text) extracted = extractFromText(text);
     } catch (e) {
       console.warn("PDF extraction failed:", e);
     }

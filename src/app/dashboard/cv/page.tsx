@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { TagInput } from "@/components/tag-input";
 import { useToast } from "@/components/ui/toast";
-import { FileText, Loader2, Star, Trash2, Eye, Upload, Sparkles } from "lucide-react";
+import { FileText, Loader2, Star, Trash2, Eye, Upload, Sparkles, Scale, History } from "lucide-react";
 
 interface Resume {
   id: string; name: string; fileName: string; fileSize: number; isDefault: boolean;
@@ -52,9 +52,17 @@ export default function CvPage() {
         title="CV Manager"
         description="Upload multiple CVs. We extract skills for matching — you can correct them."
         action={
-          <Link href="/dashboard/cv/analysis">
-            <Button><Sparkles className="h-4 w-4" /> AI CV Analysis</Button>
-          </Link>
+          <div className="flex gap-2 flex-wrap">
+            <Link href="/dashboard/cv/analysis">
+              <Button><Sparkles className="h-4 w-4" /> AI CV Analysis</Button>
+            </Link>
+            <Link href="/dashboard/cv/compare">
+              <Button variant="outline"><Scale className="h-4 w-4" /> Bandingkan CV</Button>
+            </Link>
+            <Link href="/dashboard/cv/versions">
+              <Button variant="outline"><History className="h-4 w-4" /> Riwayat Versi</Button>
+            </Link>
+          </div>
         }
       />
       <Card className="mb-4">

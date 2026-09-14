@@ -4,6 +4,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import { readFile } from "@/lib/storage";
+import { extractPdfText } from "@/lib/pdf-text";
 import { parseCvText, computeYearsFromCv, parsedCvSchema, type ParsedCv } from "./parser";
 import { buildEvidence, categorizeSkills, ownedSkills, type Evidence } from "./skill-graph";
 import { matchCvToJob, gapAnalysis, DEFAULT_WEIGHTS, type CvMatchResult, type JobForMatch } from "./matcher";
@@ -17,20 +18,10 @@ export async function parseResume(userId: string, resumeId: string) {
   let text = "";
   try {
     const buf = await readFile(resume.filePath);
-    const pdfParse = (await import("pdf-parse")).default;
-    const parsed = await pdfParse(buf);
-    text = parsed.text ?? "";
+    text = (await extractPdfText(buf)).text;
   } catch (e) {
-    throw new Error(
-      `Could not read the PDF: ${e instanceof Error ? e.message : "unknown error"}. ` +
-      "If the CV is a scanned image, the text cannot be extracted — please upload a text-based PDF."
-    );
-  }
-
-  if (text.trim().length < 50) {
-    throw new Error(
-      "Almost no text found in this PDF. It is likely a scan or image-only file, which cannot be analysed. Please upload a text-based CV."
-    );
+    // extractPdfText already produces a user-facing message.
+    throw e instanceof Error ? e : new Error("Could not read the PDF.");
   }
 
   const cv = parseCvText(text);
