@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { TagInput } from "@/components/tag-input";
 import { useToast } from "@/components/ui/toast";
-import { FileText, Loader2, Star, Trash2, Eye, Upload, Sparkles, Scale, History } from "lucide-react";
+import { FileText, Loader2, Star, Trash2, Eye, Upload, Sparkles, Scale, History, BarChart3 } from "lucide-react";
 
 interface Resume {
   id: string; name: string; fileName: string; fileSize: number; isDefault: boolean;
@@ -58,6 +58,9 @@ export default function CvPage() {
             </Link>
             <Link href="/dashboard/cv/compare">
               <Button variant="outline"><Scale className="h-4 w-4" /> Bandingkan CV</Button>
+            </Link>
+            <Link href="/dashboard/cv/analytics">
+              <Button variant="outline"><BarChart3 className="h-4 w-4" /> Performa CV</Button>
             </Link>
             <Link href="/dashboard/cv/versions">
               <Button variant="outline"><History className="h-4 w-4" /> Riwayat Versi</Button>
