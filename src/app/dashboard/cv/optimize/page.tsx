@@ -12,6 +12,7 @@ import { Progress } from "@/components/ui/feedback";
 import { useToast } from "@/components/ui/toast";
 import { BeforeAfter } from "@/components/cv/before-after";
 import { SkillConfirmation } from "@/components/cv/skill-confirmation";
+import { AiStatusPanel } from "@/components/cv/ai-status";
 import { TEMPLATES } from "@/modules/cv/templates";
 import {
   Loader2, ShieldCheck, ShieldAlert, Quote, Check, X, Pencil,
@@ -260,7 +261,10 @@ export default function OptimizePage() {
 
       <div className="grid lg:grid-cols-2 gap-4 mb-4">
         <SkillConfirmation resumeId={resumeId} onAnswered={loadAll} />
+        <AiStatusPanel />
+      </div>
 
+      <div className="grid lg:grid-cols-2 gap-4 mb-4">
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">

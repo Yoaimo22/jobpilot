@@ -8,6 +8,7 @@
  */
 import { mentions, computeYearsFromCv, type ParsedCv } from "./parser";
 import { judge, validateSuggestion, type RecommendationType } from "./truthfulness";
+import { callWithFailover, resolveProviders } from "./ai-providers";
 import type { Evidence } from "./skill-graph";
 
 export type RecommendationMode = "CONSERVATIVE" | "BALANCED" | "AGGRESSIVE";
@@ -278,117 +279,70 @@ export function buildSummaryOptions(
 }
 
 // ─────────────────────────────────────────────────────────────
-// AIProvider abstraction (spec §39)
+// AI augmentation (spec §39)
+//
+// The LLM only ever ADDS phrasing options. Scoring, gap detection and the
+// truthfulness verdict stay in local code, and every model suggestion is
+// re-judged here before it can be offered — a model is never trusted to decide
+// what the user may claim.
 // ─────────────────────────────────────────────────────────────
 
-export interface AIProvider {
-  readonly name: string;
-  readonly available: boolean;
-  /** Must return objects matching suggestionSchema. */
-  suggest(prompt: string): Promise<unknown[]>;
-}
+export { aiStatus } from "./ai-providers";
 
-/** No external calls; the deterministic engine above does the work. */
-export class NullAIProvider implements AIProvider {
-  readonly name = "deterministic";
-  readonly available = false;
-  async suggest(): Promise<unknown[]> {
-    return [];
-  }
-}
-
-/** OpenAI-compatible endpoint, configured purely via environment variables. */
-export class OpenAICompatibleProvider implements AIProvider {
-  readonly name = "openai-compatible";
-  constructor(
-    private base = process.env.LLM_API_BASE ?? "",
-    private key = process.env.LLM_API_KEY ?? "",
-    private model = process.env.LLM_MODEL ?? "gpt-4o-mini"
-  ) {}
-
-  get available() {
-    return Boolean(this.base && this.key);
-  }
-
-  async suggest(prompt: string): Promise<unknown[]> {
-    if (!this.available) return [];
-    const res = await fetch(`${this.base.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.key}` },
-      body: JSON.stringify({
-        model: this.model,
-        temperature: 0.3,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content:
-              "You rewrite CV sentences. You MUST NOT introduce any skill, technology, metric, " +
-              "number, duration, certification, or responsibility that is not present in the " +
-              'provided CV text. Reply as JSON: {"suggestions":[{"original_text","recommended_text",' +
-              '"type","evidence","related_skills","unsupported_skills","confidence","reason"}]}',
-          },
-          { role: "user", content: prompt },
-        ],
-      }),
-    });
-    if (!res.ok) return [];
-    const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    const content = json.choices?.[0]?.message?.content;
-    if (!content) return [];
-    try {
-      const parsed = JSON.parse(content) as { suggestions?: unknown[] };
-      return parsed.suggestions ?? [];
-    } catch {
-      return [];
-    }
-  }
-}
-
-export function getAIProvider(): AIProvider {
-  const p = new OpenAICompatibleProvider();
-  return p.available ? p : new NullAIProvider();
+/** True when at least one free-tier provider has a key configured. */
+export function isAiEnabled(): boolean {
+  return resolveProviders().length > 0;
 }
 
 /**
  * Merge LLM suggestions into an option list, re-validating each one locally.
- * A model suggestion that fails validation is discarded, not surfaced.
+ * A suggestion that fails validation, or that fabricates, is discarded.
+ * Never throws: on any failure the deterministic options are returned unchanged.
  */
 export async function augmentWithAI(
   original: string,
   existing: RewriteOption[],
   ctx: BuildOptionsCtx
 ): Promise<RewriteOption[]> {
-  const provider = getAIProvider();
-  if (!provider.available) return existing;
+  if (!isAiEnabled()) return existing;
 
   const prompt = [
-    "CV sentence to improve:", original, "",
-    "Target job skills:", ctx.jobSkills.join(", ") || "(none)", "",
-    "The full CV text (the ONLY source of truth):", ctx.rawText.slice(0, 4000),
+    "Rewrite this CV sentence. Return 2-3 alternatives.",
+    "",
+    `SENTENCE: ${original}`,
+    "",
+    `TARGET JOB SKILLS: ${ctx.jobSkills.join(", ") || "(none)"}`,
+    "",
+    "FULL CV TEXT — the ONLY source of truth. Do not use anything absent from it:",
+    ctx.rawText.slice(0, 3500),
   ].join("\n");
 
-  let raw: unknown[] = [];
-  try {
-    raw = await provider.suggest(prompt);
-  } catch {
+  const result = await callWithFailover(prompt, 3);
+  if (!result.ok) {
+    if (result.errors.length) {
+      console.warn("[cv-ai] all providers failed:", result.errors.map((e) => `${e.provider}: ${e.error}`).join(" | "));
+    }
     return existing;
   }
 
   const out = [...existing];
-  for (const r of raw.slice(0, 3)) {
-    const checked = validateSuggestion(r, {
+  for (const raw of result.suggestions) {
+    const checked = validateSuggestion(raw, {
       rawText: ctx.rawText,
       evidence: ctx.evidence,
       verified: ctx.verified,
     });
     if (!checked.ok) continue;
+    // A fabricating suggestion is dropped, whatever the model labelled it.
     if (checked.verdict.type === "NOT_ALLOWED") continue;
+
     const text = checked.suggestion.recommended_text.trim();
-    if (!text || out.some((o) => o.text.toLowerCase() === text.toLowerCase())) continue;
+    if (!text || text.length > 400) continue;
+    if (out.some((o) => o.text.toLowerCase() === text.toLowerCase())) continue;
+    if (text.toLowerCase() === original.trim().toLowerCase()) continue;
 
     out.push({
-      label: "AI Suggested",
+      label: `AI (${result.provider})`,
       text,
       type: checked.verdict.type,
       reason: checked.verdict.reason,
